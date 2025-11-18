@@ -13,6 +13,13 @@ def handle_input():
     user_input = input('搜尋物品: ')
     return user_input
 
+def handle_search_type():
+    search_type = input('選擇搜尋方式 (1. requests 2. selenium) [預設 1]: ')
+    if search_type == '2':
+        return 'selenium'
+    else:
+        return 'requests'
+
 def web_scrape_request():
     shop_map = {
         'pchome': {
@@ -96,25 +103,109 @@ def web_scrape_request():
 def web_scrape_selenium():
     shop_map = {
         'pchome': {
-            'search_api': 'https://ecshweb.pchome.com.tw/search/v4.3/all/results',
-            'img_api': 'https://img.pchome.com.tw/cs',
-            'prod_url': 'https://24h.pchome.com.tw/prod/'
-            # search_api = 'https://ecshweb.pchome.com.tw/search/v4.3/all/results?q='
-            # prod_api = 'https://ecapi-cdn.pchome.com.tw/ecshop/prodapi/v2/prod?id='
-            # fields = '&fields=Seq,Id,Name,Nick,Store,PreOrdDate,SpeOrdDate,Price,Discount,Pic,Weight,ISBN,Qty,Bonus,isBig,isSpec,isCombine,isDiy,isNC17,isRecyclable,isCarrier,isMedical,isBigCart,isSnapUp,isHuge,isEnergySubsidy,isPrimeOnly,isPreOrder24h,isWarranty,isLegalStore,isFresh,isBidding,isSet,isQuickSet,Volume,isArrival24h,isETicket,ShipType,isO2O,RealWH,ShipDay,ShipTag,isEbook,isSubscription,Subscription,isOnSale,isInventoryChecking,PicExtra,YoutubeInfo,SalesName,Tagline,BrandList,CategoryIds,BrandId,RatingValue,ReviewCount,isPick,PickType,Frames'
+            'search_url': 'https://24h.pchome.com.tw/search/?q=',
+            'prods_exist_selector' : 'section.u-mb24',
+            'next_page_selector' : '.o-iconFonts.o-iconFonts--arrowSolidRight'
         }, 
         'momo': {},
         'pxmart': {},
         'carrefour':{}
     }
     shop = 'pchome'
-    scrapeCycleDelay = 2
+    scrapeCycleDelay = 3
     prods_list = []
-    pass
+    last_prod = None
+    
+    def open_browser():
+        options = webdriver.ChromeOptions()
+        options.add_argument('--start-maximized') # Chrome 瀏覽器在啟動時最大化視窗
+        options.add_argument('--incognito') # 無痕模式
+        options.add_argument('--disable-popup-blocking') # 停用 Chrome 的彈窗阻擋功能。
+        driver = webdriver.Chrome(options=options)
+        return driver
 
+    def gen_search_url(query: str) -> str:
+        return f'{shop_map[shop]["search_url"]}{query}'
+
+    def scroll_down(driver):
+        driver.execute_script('window.scrollTo(0, document.body.scrollHeight);')
+        # time.sleep(scrapeCycleDelay)
+
+    def prods_exist(driver) -> bool:
+        try:
+            driver.find_element(By.CSS_SELECTOR, shop_map[shop]['prods_exist_selector'])
+            return False
+        except Exception as e:
+            return True
+    
+    def next_page(driver):
+        try:
+            return driver.find_element(By.CSS_SELECTOR, shop_map[shop]['next_page_selector'])
+        except Exception as e:
+            return None
+        
+    def is_last_page(prods: list) -> bool:
+        nonlocal last_prod
+        if last_prod != prods[-1] or last_prod is None:
+            last_prod = prods[-1]
+            return False
+        return True
+    
+    def get_prods_list(driver):
+        return driver.find_elements(By.CSS_SELECTOR, 'div.c-listInfoGrid__body ul li>div.c-prodInfoV2')
+
+    def parse_prods(prods :list):
+        # print(len(prods))
+        for prod in prods:
+            url = prod.find_element(By.CSS_SELECTOR, 'div>a').get_attribute('href')
+            img = prod.find_element(By.CSS_SELECTOR, 'div>img').get_attribute('src')
+            price = prod.find_element(By.CSS_SELECTOR, 'div.c-prodInfoV2__price').text
+            name = prod.find_element(By.CSS_SELECTOR, 'div.c-prodInfoV2__title').text
+
+            # print(url, img, price, name)
+            prods_list.append({
+                'name': name,
+                'price': price,
+                'img_url': img,
+                'prod_url': url
+            })
+
+    def run():
+        query = handle_input()
+        driver = open_browser()
+        driver.get(gen_search_url(query))
+        time.sleep(scrapeCycleDelay)
+
+        if not prods_exist(driver):
+            print('查無資料')
+            driver.quit()
+            return
+
+        while True:
+            cur_prods_list = get_prods_list(driver)
+            if is_last_page(cur_prods_list):
+                print('已到最後一頁')
+                break
+            parse_prods(cur_prods_list)
+            next_page_btn = next_page(driver)
+            if next_page_btn is None:
+                break
+            next_page_btn.click()
+            time.sleep(scrapeCycleDelay) 
+       
+        driver.quit()
+        save_to_json(prods_list, f'{query}_pchome_selenium_results.json')
+        print(f'已儲存 {len(prods_list)} 筆資料至 {query}_pchome_selenium_results.json')
+        prods_list.clear()
+    
+    run()
 
 def main():
-    web_scrape_request()
+    search_type = handle_search_type()
+    if search_type == 'requests':
+        web_scrape_request()
+    else:
+        web_scrape_selenium()
 
 if __name__ == '__main__':
     main()
