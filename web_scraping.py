@@ -36,7 +36,7 @@ def web_scrape_request():
     }
     shop = 'pchome'
     scrapeCycleDelay = 2
-    prods_list = []
+    all_prods_list = []
 
     def gen_search_url(query: str, page: int, pageCount: int = 40) -> str:
         return f'{shop_map['pchome']["search_api"]}?q={query}&page={page}&pageCount={pageCount}'
@@ -50,7 +50,7 @@ def web_scrape_request():
     def parse_results(response_json: dict) -> list:
         for prod in response_json['Prods']:
             # print(prod['Id'], prod['Name'], prod['Price'])
-            prods_list.append({
+            all_prods_list.append({
                 'id': prod['Id'],
                 'name': prod["Name"],
                 'price': prod['Price'],
@@ -88,14 +88,18 @@ def web_scrape_request():
     def run():
         query = handle_input()
         start = time.time()
+        try:
+            ret = fetch_all_prods(query)
+        except Exception as e:
+            print('發生錯誤:', e)
         ret = fetch_all_prods(query)
         end = time.time()
         print(f'耗時 {end - start:.2f} 秒')
         if ret == -1:
             return
-        save_to_json(prods_list, f'{query}_pchome_results.json')
-        print(f'已儲存 {len(prods_list)} 筆資料至 {query}_pchome_results.json')
-        prods_list.clear()
+        save_to_json(all_prods_list, f'{query}_{shop}_request.json')
+        print(f'已儲存 {len(all_prods_list)} 筆資料至 {query}_{shop}_request.json')
+        all_prods_list.clear()
 
     run()
 
@@ -105,7 +109,11 @@ def web_scrape_selenium():
         'pchome': {
             'search_url': 'https://24h.pchome.com.tw/search/?q=',
             'prods_exist_selector' : 'section.u-mb24',
-            'next_page_selector' : '.o-iconFonts.o-iconFonts--arrowSolidRight'
+            'next_page_selector' : '.o-iconFonts.o-iconFonts--arrowSolidRight',
+            'url_selector' : 'div>a',
+            'img_selector' : 'div>img',
+            'price_selector' : 'div.c-prodInfoV2__price',
+            'name_selector' : 'div.c-prodInfoV2__title'
         }, 
         'momo': {},
         'pxmart': {},
@@ -113,7 +121,7 @@ def web_scrape_selenium():
     }
     shop = 'pchome'
     scrapeCycleDelay = 3
-    prods_list = []
+    all_prods_list = []
     last_prod = None
     
     def open_browser():
@@ -157,21 +165,20 @@ def web_scrape_selenium():
     def parse_prods(prods :list):
         # print(len(prods))
         for prod in prods:
-            url = prod.find_element(By.CSS_SELECTOR, 'div>a').get_attribute('href')
-            img = prod.find_element(By.CSS_SELECTOR, 'div>img').get_attribute('src')
-            price = prod.find_element(By.CSS_SELECTOR, 'div.c-prodInfoV2__price').text
-            name = prod.find_element(By.CSS_SELECTOR, 'div.c-prodInfoV2__title').text
+            url = prod.find_element(By.CSS_SELECTOR, shop_map[shop]['url_selector']).get_attribute('href')
+            img = prod.find_element(By.CSS_SELECTOR, shop_map[shop]['img_selector']).get_attribute('src')
+            price = prod.find_element(By.CSS_SELECTOR, shop_map[shop]['price_selector']).text
+            name = prod.find_element(By.CSS_SELECTOR, shop_map[shop]['name_selector']).text
 
             # print(url, img, price, name)
-            prods_list.append({
+            all_prods_list.append({
                 'name': name,
                 'price': price,
                 'img_url': img,
                 'prod_url': url
             })
 
-    def run():
-        query = handle_input()
+    def fetch_all_prods(query: str):
         driver = open_browser()
         driver.get(gen_search_url(query))
         time.sleep(scrapeCycleDelay)
@@ -194,9 +201,19 @@ def web_scrape_selenium():
             time.sleep(scrapeCycleDelay) 
        
         driver.quit()
-        save_to_json(prods_list, f'{query}_pchome_selenium_results.json')
-        print(f'已儲存 {len(prods_list)} 筆資料至 {query}_pchome_selenium_results.json')
-        prods_list.clear()
+
+    def run():
+        query = handle_input()
+        start = time.time()
+        try:
+            fetch_all_prods(query)
+        except Exception as e:
+            print('發生錯誤:', e)
+        end = time.time()
+        print(f'耗時 {end - start:.2f} 秒')
+        save_to_json(all_prods_list, f'{query}_{shop}_selenium.json')
+        print(f'已儲存 {len(all_prods_list)} 筆資料至 {query}_{shop}_selenium.json')
+        all_prods_list.clear()
     
     run()
 
